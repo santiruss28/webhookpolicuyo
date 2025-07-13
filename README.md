@@ -46,8 +46,8 @@ Ideal para integrarse con chatbots u otros sistemas que necesiten sugerencias in
 ### 1. Clonar el repositorio
 
 ```bash
-git clone https://github.com/santiruss28/cotizador-ferreteria.git
-cd cotizador-ferreteria
+git clone https://github.com/santiruss28/webhookpolicuyo.git
+cd webhookpolicuyo
 ```
 
 ### 2. Instalar dependencias
