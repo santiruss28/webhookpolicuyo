@@ -103,146 +103,67 @@ def get_segmentos():
         logging.error(f"Error in /segmentos: {str(e)}")
         return jsonify({"error": "Internal server error"}), 500
 
+from flask import Response
 @app.route('/cotizar', methods=['POST'])
 def cotizar():
-    """Main endpoint for product quotation"""
     try:
-        # Validate request content type
         if not request.is_json:
-            return jsonify({
-                "error": "Content-Type must be application/json"
-            }), 400
-        
-        # Get JSON data
+            return Response("❌ La solicitud debe enviarse como JSON", content_type="text/plain"), 400
+
         data = request.get_json()
-        
-        # Check if it's a single query or multiple queries
+        texto = ""
+        all_resultados = []
+
         if 'consulta' in data:
-            # Single query format (backward compatibility)
-            consulta = data['consulta']
-            segmento = data.get('segmento', None)
-            
-            # Validate consulta is not empty
-            if not consulta or not isinstance(consulta, str) or not consulta.strip():
-                return jsonify({
-                    "error": "Field 'consulta' must be a non-empty string"
-                }), 400
-            
-            # Validate segmento if provided
-            if segmento is not None and (not isinstance(segmento, str) or not segmento.strip()):
-                return jsonify({
-                    "error": "Field 'segmento' must be a non-empty string when provided"
-                }), 400
-            
-            logging.info(f"Processing single query: {consulta}" + (f" in segment: {segmento}" if segmento else ""))
-            
-            # Search for products
-            results = search_products(consulta.strip(), segmento.strip() if segmento else None)
-            
-            response_data = {
-                "consulta": consulta,
-                "resultados": results,
-                "total_encontrados": len(results)
-            }
-            
-            if segmento:
-                response_data["segmento_filtrado"] = segmento
-                
+            consultas = [{'consulta': data['consulta'], 'segmento': data.get('segmento', '')}]
         elif 'consultas' in data:
-            # Multiple queries format
             consultas = data['consultas']
-            
-            if not isinstance(consultas, list) or not consultas:
-                return jsonify({
-                    "error": "Field 'consultas' must be a non-empty array"
-                }), 400
-            
-            all_results = []
-            consultas_procesadas = []
-            
-            for i, item in enumerate(consultas):
-                if not isinstance(item, dict):
-                    return jsonify({
-                        "error": f"Item {i+1} in 'consultas' must be an object with 'consulta' field"
-                    }), 400
-                
-                if 'consulta' not in item:
-                    return jsonify({
-                        "error": f"Item {i+1} in 'consultas' is missing required field 'consulta'"
-                    }), 400
-                
-                consulta = item['consulta']
-                segmento = item.get('segmento', None)
-                
-                if not consulta or not isinstance(consulta, str) or not consulta.strip():
-                    return jsonify({
-                        "error": f"Field 'consulta' in item {i+1} must be a non-empty string"
-                    }), 400
-                
-                if segmento is not None and (not isinstance(segmento, str) or not segmento.strip()):
-                    return jsonify({
-                        "error": f"Field 'segmento' in item {i+1} must be a non-empty string when provided"
-                    }), 400
-                
-                logging.info(f"Processing query {i+1}: {consulta}" + (f" in segment: {segmento}" if segmento else ""))
-                
-                # Search for this specific query
-                item_results = search_products(consulta.strip(), segmento.strip() if segmento else None)
-                
-                consulta_info = {
-                    "consulta": consulta,
-                    "resultados": item_results,
-                    "total_encontrados": len(item_results)
-                }
-                
-                if segmento:
-                    consulta_info["segmento_filtrado"] = segmento
-                
-                consultas_procesadas.append(consulta_info)
-                all_results.extend(item_results)
-            
-            # Remove duplicates based on product description
-            seen_descriptions = set()
-            unique_results = []
-            for result in all_results:
-                if result['descripcion'] not in seen_descriptions:
-                    seen_descriptions.add(result['descripcion'])
-                    unique_results.append(result)
-            
-            # Sort by score
-            unique_results.sort(key=lambda x: x['score'], reverse=True)
-            
-            response_data = {
-                "consultas_procesadas": consultas_procesadas,
-                "resultados_combinados": unique_results,
-                "total_consultas": len(consultas),
-                "total_encontrados_combinados": len(unique_results)
-            }
-            
         else:
-            return jsonify({
-                "error": "Missing required field. Use 'consulta' for single search or 'consultas' for multiple searches"
-            }), 400
-        
-        # Log results based on query type
-        if 'consulta' in data:
-            logging.info(f"Found {len(response_data['resultados'])} matching products for single query")
-        else:
-            logging.info(f"Processed {len(response_data['consultas_procesadas'])} queries, found {len(response_data['resultados_combinados'])} unique products")
-            
-        return jsonify(response_data), 200
-        
-    except ValueError as ve:
-        logging.error(f"Validation error: {str(ve)}")
-        return jsonify({
-            "error": f"Data error: {str(ve)}"
-        }), 500
-        
+            return Response("❌ Faltan los campos 'consulta' o 'consultas'", content_type="text/plain"), 400
+
+        for item in consultas:
+            consulta = item.get('consulta', '').strip()
+            segmento = item.get('segmento', '').strip()
+            if not consulta:
+                continue
+
+            resultados = search_products(consulta, segmento if segmento else None)
+            all_resultados.extend(resultados)
+
+            texto += f"🔎 *Consulta:* {consulta}\n"
+            if resultados:
+                for r in resultados[:5]:  # Mostramos hasta 5 resultados por ítem
+                    texto += (
+                        f"• {r['descripcion']}\n"
+                        f"  - 💵 Contado: ${r['precio_contado']}\n"
+                        f"  - 💳 Tarjeta: ${r['precio_tarjeta']}\n"
+                        f"  - 🏷️ Segmento: {r['segmento']}\n"
+                    )
+                    if 'score' in r:
+                        texto += f"  - 🎯 Similitud: {r['score']}\n"
+                    texto += "\n"
+            else:
+                texto += "⚠️ No se encontraron coincidencias.\n\n"
+
+        # Calcular total
+        def to_float(valor):
+            try:
+                return float(str(valor).replace('.', '').replace(',', '.'))
+            except:
+                return 0.0
+
+        total = sum(to_float(r['precio_contado']) for r in all_resultados)
+        texto += f"🧮 *Total estimado (contado):* ${total:,.2f}\n"
+
+        # Agregamos aviso si hay demasiadas coincidencias similares
+        if len(all_resultados) > 3:
+            texto += "\nℹ️ Si alguno de estos productos no coincide con lo que necesitás, podés indicarnos el tipo, marca o alguna característica para afinar la búsqueda."
+
+        return Response(texto, content_type="text/plain"), 200
+
     except Exception as e:
-        logging.error(f"Unexpected error in /cotizar: {str(e)}")
-        return jsonify({
-            "error": "Internal server error occurred while processing request"
-        }), 500
+        return Response(f"❌ Error interno: {str(e)}", content_type="text/plain"), 500
+
 
 @app.errorhandler(404)
 def not_found(error):
